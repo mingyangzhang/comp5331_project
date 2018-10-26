@@ -1,0 +1,4 @@
+https://drive.google.com/drive/folders/1BlBLn3_24xyILFWaUS7bJQOnQqqpe3YJ?usp=sharing
+三个数据集每个是一个mat文件
+每个mat文件的最后一列是label
+前面每列是一个传感器的值
