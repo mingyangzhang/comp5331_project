@@ -4,66 +4,81 @@ import numpy as np
 from tensorflow.contrib import rnn
 
 def conv_layer(x, scope, kernel_shape, stride):
-    x = tf.cast(x, tf.float32)
-    with tf.variable_scope(scope + "-conv") as scp:
-        kernel = tf.Variable(tf.truncated_normal(kernel_shape,
-                                                dtype=tf.float32,
-                                                stddev=1e-1),
-                             name=scope + '-kernel')
+    """ Create CNN layer. """
 
-        conv = tf.nn.conv2d(x, kernel, stride, padding='SAME')
-        biases = tf.Variable(tf.constant(0.0, shape=[kernel_shape[-1]], dtype=tf.float32),
-                            trainable=True,
-                            name='-biases')
+    kernel = tf.Variable(tf.truncated_normal(kernel_shape,
+                                            dtype=tf.float32,
+                                            stddev=1e-1),
+                            name=scope + '-kernel')
 
-        bias = tf.nn.bias_add(conv, biases)
-        conv = tf.nn.relu(bias, name=scope)
+    conv = tf.nn.conv2d(x, kernel, stride, padding='SAME')
+    biases = tf.Variable(tf.constant(0.0, shape=[kernel_shape[-1]], dtype=tf.float32),
+                        trainable=True,
+                        name=scope+'-biases')
 
-    with tf.name_scope(scope + '-lrn') as scp:
-        lrn = tf.nn.local_response_normalization(conv,
-                                                  alpha=1e-4,
-                                                  beta=0.75,
-                                                  depth_radius=2,
-                                                  bias=2.0)
+    bias = tf.nn.bias_add(conv, biases)
+    conv = tf.nn.relu(bias, name=scope)
+    lrn = tf.nn.local_response_normalization(conv,
+                                             alpha=1e-4,
+                                             beta=0.75,
+                                             depth_radius=2,
+                                             bias=2.0)
     return lrn
 
 class Model(object):
+    """ Deep r-th root model. """
 
-    def __init__(self):
-        # self._layers = layers
-        # self._input_dim = input_dim
-        # self._output_dim = output_dim
-        # self.batch_gen = batch_gen
-        # self.test_gen = test_gen
-        # self.learning_rate = learning_rate
-        # self.epoches = epoches
-        pass
+    def __init__(self, ts_dim, encode_size, cnn_filter_shapes, cnn_strides, cnn_dense_layers, rnn_hidden_states, batch_size):
+        """
+        """
+        self._ts_dim = ts_dim
+        self._encode_size = encode_size
+        self._cnn_filter_shapes = cnn_filter_shapes
+        self._cnn_strides = cnn_strides
+        self._cnn_dense_layers = cnn_dense_layers
+        self._rnn_hidden_states = rnn_hidden_states
+        self._batch_size = batch_size
 
-    def cnn_forward(self, corr):
-        conv1 = conv_layer(corr, "c1", [3, 3, 1, 16], [1, 1, 1, 1])
-        conv2 = conv_layer(conv1, "c2", [3, 3, 16, 32], [1, 2, 2, 1])
-        conv3 = conv_layer(conv2, "c3", [3, 3, 32, 64], [1, 2, 2, 1])
-        conv4 = conv_layer(conv3, "c4", [3, 3, 64, 64], [1, 1, 1, 1])
-        flat = tf.reshape(conv4, [-1, 25*25*64])
-        dense1 = tf.layers.dense(inputs=flat, units=1024, activation=tf.nn.relu)
-        dense2 = tf.layers.dense(inputs=dense1, units=256, activation=tf.nn.relu)
-        return dense2
 
-    def lstm_forward(self, X):
+    def construct_cnn(self, X):
+        """ Construct CNN part. """
+
+        conv = tf.cast(X, tf.float32)
+        for i, (flt, stride) in enumerate(zip(self._cnn_filter_shapes, self._cnn_strides)):
+            conv = conv_layer(conv, "cnn_layer_{}".format(i), flt, stride)
+        _, h, w, n_channel = conv.shape
+        flat = tf.reshape(conv, [-1, h*w*n_channel])
+
+        dense = flat
+        for i, lsize in enumerate(self._cnn_dense_layers):
+            dense = tf.layers.dense(inputs=dense, units=lsize, activation=tf.nn.relu, name="cnn_dense_{}".format(i))
+        return dense
+
+    def construct_rnn(self, X):
+        """ Construct RNN part. """
+
         X = tf.cast(X, tf.float32)
         timesteps = X.shape[1]
         X = tf.unstack(X, timesteps, 1)
-        lstm_cell = rnn.BasicLSTMCell(256, forget_bias=1.0)
+        lstm_cell = rnn.BasicLSTMCell(self._rnn_hidden_states, forget_bias=1.0)
         outputs, _ = rnn.static_rnn(lstm_cell, X, dtype=tf.float32)
-        return outputs
+        return outputs[-1]
+
+    def binary_encode(self, X, corr):
+        """ Binary encode. """
+
+        cnn_dense = self.construct_cnn(corr)
+        rnn_output = self.construct_rnn(X)
+        encode = tf.concat([cnn_dense, rnn_output], axis=1)
+        bencode = tf.layers.dense(inputs=encode, units=self._encode_size, activation=tf.nn.tanh, name="encode")
+        return bencode
+
 
     def test(self):
-        corr = np.random.rand(16, 100, 100, 1)
-        dense = self.cnn_forward(corr)
-        x = np.random.rand(16, 100, 10)
-        outputs = self.lstm_forward(x)
-        output = outputs[-1]
-        encode = tf.concat([dense, output], axis=1)
+        corr = np.random.rand(self._batch_size, self._ts_dim, self._ts_dim, 1)
+        x = np.random.rand(self._batch_size, 128, self._ts_dim)
+        encode = self.binary_encode(x, corr)
+
         init = tf.initialize_all_variables()
         with tf.Session() as sess:
             sess.run(init)
@@ -71,5 +86,11 @@ class Model(object):
         import pdb;pdb.set_trace()
 
 if __name__ == "__main__":
-    model = Model()
+    model = Model(ts_dim=20,
+                  encode_size=32,
+                  cnn_filter_shapes=[[3, 3, 1, 16], [3, 3, 16, 32], [3, 3, 32, 64], [3, 3, 64, 64]],
+                  cnn_strides=[[1, 1, 1, 1], [1, 2, 2, 1], [1, 2, 2, 1], [1, 1, 1, 1]],
+                  cnn_dense_layers=[256, 128],
+                  rnn_hidden_states=128,
+                  batch_size=128)
     model.test()
