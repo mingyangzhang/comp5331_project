@@ -9,12 +9,12 @@ def conv_layer(x, scope, kernel_shape, stride):
     kernel = tf.Variable(tf.truncated_normal(kernel_shape,
                                             dtype=tf.float32,
                                             stddev=1e-1),
-                            name=scope + '-kernel')
+                         name=scope + '-kernel')
 
     conv = tf.nn.conv2d(x, kernel, stride, padding='SAME')
     biases = tf.Variable(tf.constant(0.0, shape=[kernel_shape[-1]], dtype=tf.float32),
-                        trainable=True,
-                        name=scope+'-biases')
+                         trainable=True,
+                         name=scope+'-biases')
 
     bias = tf.nn.bias_add(conv, biases)
     conv = tf.nn.relu(bias, name=scope)
