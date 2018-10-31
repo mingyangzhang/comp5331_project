@@ -25,7 +25,7 @@ def conv_layer(x, scope, kernel_shape, stride):
                                              bias=2.0)
     return lrn
 
-class Model(object):
+class DeepRthModel(object):
     """ Deep r-th root model. """
 
     def __init__(self, ts_dim, encode_size, cnn_filter_shapes, cnn_strides, cnn_dense_layers, rnn_hidden_states, batch_size):
@@ -86,11 +86,11 @@ class Model(object):
         import pdb;pdb.set_trace()
 
 if __name__ == "__main__":
-    model = Model(ts_dim=20,
-                  encode_size=32,
-                  cnn_filter_shapes=[[3, 3, 1, 16], [3, 3, 16, 32], [3, 3, 32, 64], [3, 3, 64, 64]],
-                  cnn_strides=[[1, 1, 1, 1], [1, 2, 2, 1], [1, 2, 2, 1], [1, 1, 1, 1]],
-                  cnn_dense_layers=[256, 128],
-                  rnn_hidden_states=128,
-                  batch_size=128)
+    model = DeepRthModel(ts_dim=20,
+                         encode_size=32,
+                         cnn_filter_shapes=[[3, 3, 1, 16], [3, 3, 16, 32], [3, 3, 32, 64], [3, 3, 64, 64]],
+                         cnn_strides=[[1, 1, 1, 1], [1, 2, 2, 1], [1, 2, 2, 1], [1, 1, 1, 1]],
+                         cnn_dense_layers=[256, 128],
+                         rnn_hidden_states=128,
+                         batch_size=128)
     model.test()
