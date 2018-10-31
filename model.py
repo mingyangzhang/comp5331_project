@@ -28,9 +28,10 @@ def conv_layer(x, scope, kernel_shape, stride):
 class DeepRthModel(object):
     """ Deep r-th root model. """
 
-    def __init__(self, ts_dim, encode_size, cnn_filter_shapes, cnn_strides, cnn_dense_layers, rnn_hidden_states, batch_size):
+    def __init__(self, r, ts_dim, encode_size, cnn_filter_shapes, cnn_strides, cnn_dense_layers, rnn_hidden_states, batch_size):
         """
         """
+        self._r = r
         self._ts_dim = ts_dim
         self._encode_size = encode_size
         self._cnn_filter_shapes = cnn_filter_shapes
@@ -72,6 +73,21 @@ class DeepRthModel(object):
         encode = tf.concat([cnn_dense, rnn_output], axis=1)
         bencode = tf.layers.dense(inputs=encode, units=self._encode_size, activation=tf.nn.tanh, name="encode")
         return bencode
+
+    def construct_loss(self):
+        self.x0 = tf.placeholder(tf.float32, shape=(self._batch_size, None, self._ts_dim))
+        self.corr0 = tf.placeholder(tf.float32, shape=(self._batch_size, self._ts_dim, self._ts_dim, 1))
+        encode0 = self.binary_encode(self.x0, self.corr0)
+
+        self.x1 = tf.placeholder(tf.float32, shape=(self._batch_size, None, self._ts_dim))
+        self.corr1 = tf.placeholder(tf.float32, shape=(self._batch_size, self._ts_dim, self._ts_dim, 1))
+        encode1 = self.binary_encode(self.x1, self.corr1)
+
+        self.x2 = tf.placeholder(tf.float32, shape=(self._batch_size, None, self._ts_dim))
+        self.corr2 = tf.placeholder(tf.float32, shape=(self._batch_size, self._ts_dim, self._ts_dim, 1))
+        encode2 = self.binary_encode(self.x2, self.corr2)
+
+        self.loss = tf.sigmoid(tf.norm(encode0-encode1) - tf.norm(encode0-encode2))
 
 
     def test(self):
