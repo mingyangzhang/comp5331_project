@@ -48,18 +48,18 @@ class DataHelper(object):
 
     def _compute_correlation_matrix(self, ts):
         ts = ts - np.mean(ts, axis=1, keepdims=True)
-        divisor = np.sum(np.power(ts, 2), axis=1, keepdims=True)
-        corr = np.divide(np.matmul(ts, ts.T), np.sqrt(np.matmul(divisor, divisor.T)))
+        divisor = np.sum(np.power(ts, 2), axis=0, keepdims=True)
+        corr = np.divide(np.matmul(ts.T, ts), np.sqrt(np.matmul(divisor.T, divisor)))
         return corr
 
     def gen_training_batch(self, batch_size):
         samples = self._gen_triples(batch_size)
-        _, ts_dim, _ = samples[0].shape
+        _, _, ts_dim = samples[0].shape
         training_batch = []
         for sample in samples:
-            corrs = np.zeros((batch_size, ts_dim, ts_dim))
+            corrs = np.zeros((batch_size, ts_dim, ts_dim, 1))
             for i in range(batch_size):
-                corrs[i, :, :] = self._compute_correlation_matrix(sample[i, :, :])
+                corrs[i, :, :, 0] = self._compute_correlation_matrix(sample[i, :, :])
             training_batch.append((sample, corrs))
         return training_batch
 

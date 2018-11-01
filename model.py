@@ -6,33 +6,35 @@ from tensorflow.contrib import rnn
 def conv_layer(x, scope, kernel_shape, stride):
     """ Create CNN layer. """
 
-    kernel = tf.Variable(tf.truncated_normal(kernel_shape,
-                                            dtype=tf.float32,
-                                            stddev=1e-1),
-                         name=scope + '-kernel')
+    with tf.variable_scope("cnn_lauer_{}".format(scope), reuse=tf.AUTO_REUSE) as scp:
+        kernel = tf.get_variable(
+            name=scope + '-kernel',
+            initializer=tf.truncated_normal(kernel_shape, dtype=tf.float32, stddev=1e-1))
 
-    conv = tf.nn.conv2d(x, kernel, stride, padding='SAME')
-    biases = tf.Variable(tf.constant(0.0, shape=[kernel_shape[-1]], dtype=tf.float32),
-                         trainable=True,
-                         name=scope+'-biases')
+        conv = tf.nn.conv2d(x, kernel, stride, padding='SAME')
+        biases = tf.get_variable(
+            name=scope+'-biases',
+            trainable=True,
+            initializer=tf.constant(0.0, shape=[kernel_shape[-1]], dtype=tf.float32))
 
-    bias = tf.nn.bias_add(conv, biases)
-    conv = tf.nn.relu(bias, name=scope)
-    lrn = tf.nn.local_response_normalization(conv,
-                                             alpha=1e-4,
-                                             beta=0.75,
-                                             depth_radius=2,
-                                             bias=2.0)
+        bias = tf.nn.bias_add(conv, biases)
+        conv = tf.nn.relu(bias, name=scope)
+        lrn = tf.nn.local_response_normalization(conv,
+                                                alpha=1e-4,
+                                                beta=0.75,
+                                                depth_radius=2,
+                                                bias=2.0)
     return lrn
 
 class DeepRthModel(object):
     """ Deep r-th root model. """
 
-    def __init__(self, r, ts_dim, encode_size, cnn_filter_shapes, cnn_strides, cnn_dense_layers, rnn_hidden_states, batch_size):
+    def __init__(self, r, ts_dim, timesteps, encode_size, cnn_filter_shapes, cnn_strides, cnn_dense_layers, rnn_hidden_states, batch_size):
         """
         """
         self._r = r
         self._ts_dim = ts_dim
+        self._timesteps = timesteps
         self._encode_size = encode_size
         self._cnn_filter_shapes = cnn_filter_shapes
         self._cnn_strides = cnn_strides
@@ -52,17 +54,18 @@ class DeepRthModel(object):
 
         dense = flat
         for i, lsize in enumerate(self._cnn_dense_layers):
-            dense = tf.layers.dense(inputs=dense, units=lsize, activation=tf.nn.relu, name="cnn_dense_{}".format(i))
+            with tf.variable_scope("cnn_dense_{}".format(i), reuse=tf.AUTO_REUSE) as scp:
+                dense = tf.layers.dense(inputs=dense, units=lsize, activation=tf.nn.relu, name="cnn_dense_{}".format(i))
         return dense
 
     def construct_rnn(self, X):
         """ Construct RNN part. """
 
         X = tf.cast(X, tf.float32)
-        timesteps = X.shape[1]
-        X = tf.unstack(X, timesteps, 1)
-        lstm_cell = rnn.BasicLSTMCell(self._rnn_hidden_states, forget_bias=1.0)
-        outputs, _ = rnn.static_rnn(lstm_cell, X, dtype=tf.float32)
+        X = tf.unstack(X, self._timesteps, 1)
+        with tf.variable_scope("rnn-part", reuse=tf.AUTO_REUSE) as scp:
+            lstm_cell = rnn.BasicLSTMCell(self._rnn_hidden_states, forget_bias=1.0, name="lstm_cell")
+            outputs, _ = rnn.static_rnn(lstm_cell, X, dtype=tf.float32)
         return outputs[-1]
 
     def binary_encode(self, X, corr):
@@ -71,19 +74,20 @@ class DeepRthModel(object):
         cnn_dense = self.construct_cnn(corr)
         rnn_output = self.construct_rnn(X)
         encode = tf.concat([cnn_dense, rnn_output], axis=1)
-        bencode = tf.layers.dense(inputs=encode, units=self._encode_size, activation=tf.nn.tanh, name="encode")
+        with tf.variable_scope("encode_layer", reuse=tf.AUTO_REUSE) as scp:
+            bencode = tf.layers.dense(inputs=encode, units=self._encode_size, activation=tf.nn.tanh, name="encode")
         return bencode
 
     def construct_loss(self):
-        self.x0 = tf.placeholder(tf.float32, shape=(self._batch_size, None, self._ts_dim))
+        self.x0 = tf.placeholder(tf.float32, shape=(self._batch_size, self._timesteps, self._ts_dim))
         self.corr0 = tf.placeholder(tf.float32, shape=(self._batch_size, self._ts_dim, self._ts_dim, 1))
         encode0 = self.binary_encode(self.x0, self.corr0)
 
-        self.x1 = tf.placeholder(tf.float32, shape=(self._batch_size, None, self._ts_dim))
+        self.x1 = tf.placeholder(tf.float32, shape=(self._batch_size, self._timesteps, self._ts_dim))
         self.corr1 = tf.placeholder(tf.float32, shape=(self._batch_size, self._ts_dim, self._ts_dim, 1))
         encode1 = self.binary_encode(self.x1, self.corr1)
 
-        self.x2 = tf.placeholder(tf.float32, shape=(self._batch_size, None, self._ts_dim))
+        self.x2 = tf.placeholder(tf.float32, shape=(self._batch_size, self._timesteps, self._ts_dim))
         self.corr2 = tf.placeholder(tf.float32, shape=(self._batch_size, self._ts_dim, self._ts_dim, 1))
         encode2 = self.binary_encode(self.x2, self.corr2)
 
