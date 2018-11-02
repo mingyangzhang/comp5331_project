@@ -6,7 +6,7 @@ from tensorflow.contrib import rnn
 def conv_layer(x, scope, kernel_shape, stride):
     """ Create CNN layer. """
 
-    with tf.variable_scope("cnn_lauer_{}".format(scope), reuse=tf.AUTO_REUSE) as scp:
+    with tf.variable_scope("cnn_layer_{}".format(scope), reuse=tf.AUTO_REUSE) as scp:
         kernel = tf.get_variable(
             name=scope + '-kernel',
             initializer=tf.truncated_normal(kernel_shape, dtype=tf.float32, stddev=1e-1))
@@ -74,8 +74,13 @@ class DeepRthModel(object):
         cnn_dense = self.construct_cnn(corr)
         rnn_output = self.construct_rnn(X)
         encode = tf.concat([cnn_dense, rnn_output], axis=1)
+        bias = tf.reduce_mean(encode, axis=1, keepdims=True)
         with tf.variable_scope("encode_layer", reuse=tf.AUTO_REUSE) as scp:
-            bencode = tf.layers.dense(inputs=encode, units=self._encode_size, activation=tf.nn.tanh, name="encode")
+            shape = (encode.shape[1].value, self._encode_size)
+            encode_w = tf.get_variable(
+                name="encode_w",
+                initializer=tf.truncated_normal(shape, dtype=tf.float32, stddev=1e-1))
+            bencode = tf.matmul(encode-bias, encode_w)
         return bencode
 
     def construct_loss(self):
@@ -90,8 +95,10 @@ class DeepRthModel(object):
         self.x2 = tf.placeholder(tf.float32, shape=(self._batch_size, self._timesteps, self._ts_dim))
         self.corr2 = tf.placeholder(tf.float32, shape=(self._batch_size, self._ts_dim, self._ts_dim, 1))
         encode2 = self.binary_encode(self.x2, self.corr2)
-
-        self.loss = tf.sigmoid(tf.norm(encode0-encode1) - tf.norm(encode0-encode2))
+        encode_weight = tf.get_variable(name="encode_w", shape=(self._cnn_dense_layers[-1]*2, self._encode_size))
+        _lambda = 0.01
+        self.loss = (tf.pow(tf.sigmoid(tf.norm(encode0-encode1) - tf.norm(encode0-encode2)), 1/self._r) +
+                     _lambda*tf.nn.l2_loss(encode_weight))
 
 
     def test(self):

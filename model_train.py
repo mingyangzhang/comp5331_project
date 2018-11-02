@@ -1,19 +1,21 @@
-from data_helper import DataHelper
-from model import DeepRthModel
 import scipy.io as sio
 import tensorflow as tf
+import os
 
-BATCH_SIZE = 128
+from data_helper import DataHelper
+from model import DeepRthModel
+
+BATCH_SIZE = 16
 FRAMELEN = 10
 OVERLAP = 5
-EPOCH = 1
+EPOCH = 20
 
 def model_train():
     data = sio.loadmat("./datasets/pamap.mat")["data"]
     dh = DataHelper(data, FRAMELEN, OVERLAP)
     ts_dim = data.shape[1]-1
     training_batch = dh.gen_training_batch(BATCH_SIZE)
-    model = DeepRthModel(r=1,
+    model = DeepRthModel(r=10,
                          ts_dim=ts_dim,
                          timesteps=FRAMELEN,
                          encode_size=32,
@@ -24,9 +26,13 @@ def model_train():
                          batch_size=BATCH_SIZE)
     model.construct_loss()
     optimizer = tf.train.AdadeltaOptimizer(learning_rate=0.01).minimize(model.loss)
-    init = tf.initialize_all_variables()
+    init = tf.global_variables_initializer()
+    saver = tf.train.Saver()
     with tf.Session() as sess:
         sess.run(init)
+        ckpt = tf.train.get_checkpoint_state(os.path.dirname("checkpoints/checkpoint"))
+        if ckpt and ckpt.model_checkpoint_path:
+            saver.restore(sess, ckpt.model_checkpoint_path)
         for i in range(EPOCH):
             training_batch = dh.gen_training_batch(BATCH_SIZE)
             sample0 ,sample1, sample2 = training_batch
@@ -40,6 +46,8 @@ def model_train():
                 model.corr2: sample2[1],
             }
             _, loss = sess.run([optimizer, model.loss], feed_dict=feed_dict)
+            print(loss)
+        saver.save(sess, "checkpoints/model")
 
 if __name__ == "__main__":
     model_train()
