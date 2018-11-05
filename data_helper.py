@@ -3,7 +3,13 @@ import scipy.io as sio
 
 class DataHelper(object):
     """ Load data for model train and test. """
-    def __init__(self, data, length, overlap):
+    def __init__(self, data, length, overlap, partition):
+        """
+            length: length of frame
+            overlap: overlap of two frames
+            partition: [train_size, validation_size, test_size]
+        """
+
         labels = list(set(data[:, -1]))
         frames = {}
         for label in labels:
@@ -12,11 +18,12 @@ class DataHelper(object):
         self._frame = frames
         self._length = length
         self._overlap = overlap
-
+        self._partition = partition
         col_mean = np.nanmean(data, axis=0)
         nan_inds = np.where(np.isnan(data))
         data[nan_inds] = np.take(col_mean, nan_inds[1])
         self._divide_into_frames(data)
+        self._split_frames()
 
     def _divide_into_frames(self, data):
         n, _ = data.shape
@@ -32,17 +39,30 @@ class DataHelper(object):
         for label in self._labels:
             self._frame[label] = np.array(self._frame[label])
 
+    def _split_frames(self):
+        partition = []
+        for i in range(len(self._partition)-1):
+            partition.append(np.sum(self._partition[:i+1]))
+        partition = partition/np.sum(self._partition)
+        self._train_frames = dict.fromkeys(self._frame.keys())
+        self._validation_frames = dict.fromkeys(self._frame.keys())
+        self._test_frames = dict.fromkeys(self._frame.keys())
+        for key in self._frame:
+            size = self._frame[key].shape[0]
+            splits = np.split(self._frame[key], [int(size*p) for p in partition])
+            self._train_frames[key], self._validation_frames[key], self._test_frames[key] = splits
+
     def _gen_triples(self, batch_size):
         pos_index, neg_index = np.random.choice(len(self._labels), 2, replace=False)
         pos_label, neg_label = self._labels[pos_index], self._labels[neg_index]
         # select positive sample
-        index = np.random.choice(self._frame[pos_label].shape[0], 2*batch_size, replace=False)
-        pos_sample0 = self._frame[pos_label][index[:batch_size]]
-        pos_sample1 = self._frame[pos_label][index[batch_size:]]
+        index = np.random.choice(self._train_frames[pos_label].shape[0], 2*batch_size, replace=False)
+        pos_sample0 = self._train_frames[pos_label][index[:batch_size]]
+        pos_sample1 = self._train_frames[pos_label][index[batch_size:]]
 
         # select negative sample
-        index = np.random.choice(self._frame[neg_label].shape[0], batch_size, replace=False)
-        neg_sample = self._frame[neg_label][index]
+        index = np.random.choice(self._train_frames[neg_label].shape[0], batch_size, replace=False)
+        neg_sample = self._train_frames[neg_label][index]
 
         return pos_sample0, pos_sample1, neg_sample
 
@@ -63,8 +83,19 @@ class DataHelper(object):
             training_batch.append((sample, corrs))
         return training_batch
 
-    def gen_test_sample(self):
-        pass
+    def gen_test_samples(self):
+        test_frames = []
+        test_labels = []
+        for key in self._test_frames:
+            size = self._test_frames[key].shape[0]
+            test_frames.append(self._test_frames[key])
+            test_labels.append(np.ones((size))*key)
+        test_frames, test_labels = np.concatenate(test_frames), np.concatenate(test_labels)
+        n, _, ts_dim = test_frames.shape
+        corrs = np.zeros((n, ts_dim, ts_dim, 1))
+        for i in range(n):
+                corrs[i, :, :, 0] = self._compute_correlation_matrix(test_frames[i, :, :])
+        return test_frames, corrs, test_labels
 
 if __name__ == "__main__":
     data = sio.loadmat("./datasets/pamap.mat")["data"]
