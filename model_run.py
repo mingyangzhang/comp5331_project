@@ -5,12 +5,12 @@ import os
 from data_helper import DataHelper
 from model import DeepRthModel
 
-BATCH_SIZE = 512
+BATCH_SIZE = 128
 FRAMELEN = 10
 OVERLAP = 5
 EPOCH = 200
 
-data = sio.loadmat("./datasets/pamap.mat")["data"]
+data = sio.loadmat("./datasets/eeg.mat")["data"]
 dh = DataHelper(data, FRAMELEN, OVERLAP, [1, 0.1, 0.1])
 ts_dim = data.shape[1]-1
 model = DeepRthModel(r=10,
@@ -25,8 +25,9 @@ model = DeepRthModel(r=10,
 def model_train():
     """ """
 
+    mini_loss = 1
     model.construct_loss()
-    optimizer = tf.train.AdadeltaOptimizer(learning_rate=0.001).minimize(model.loss)
+    optimizer = tf.train.AdamOptimizer(learning_rate=0.001).minimize(model.loss)
     init = tf.global_variables_initializer()
     saver = tf.train.Saver()
     with tf.Session() as sess:
@@ -46,8 +47,10 @@ def model_train():
                 model.corr2: sample2[1],
             }
             _, loss = sess.run([optimizer, model.loss], feed_dict=feed_dict)
-            print(loss)
-        saver.save(sess, "checkpoints/model")
+            if  loss < mini_loss:
+                mini_loss = loss
+                print(loss)
+                saver.save(sess, "checkpoints/model")
 
 def model_test():
     """ """

@@ -52,17 +52,17 @@ class DataHelper(object):
             splits = np.split(self._frame[key], [int(size*p) for p in partition])
             self._train_frames[key], self._validation_frames[key], self._test_frames[key] = splits
 
-    def _gen_triples(self, batch_size):
+    def _gen_triples(self):
         pos_index, neg_index = np.random.choice(len(self._labels), 2, replace=False)
         pos_label, neg_label = self._labels[pos_index], self._labels[neg_index]
         # select positive sample
-        index = np.random.choice(self._train_frames[pos_label].shape[0], 2*batch_size, replace=False)
-        pos_sample0 = self._train_frames[pos_label][index[:batch_size]]
-        pos_sample1 = self._train_frames[pos_label][index[batch_size:]]
+        index = np.random.choice(self._train_frames[pos_label].shape[0], 2, replace=False)
+        pos_sample0 = self._train_frames[pos_label][index[0]]
+        pos_sample1 = self._train_frames[pos_label][index[1]]
 
         # select negative sample
-        index = np.random.choice(self._train_frames[neg_label].shape[0], batch_size, replace=False)
-        neg_sample = self._train_frames[neg_label][index]
+        index = np.random.choice(self._train_frames[neg_label].shape[0], 1, replace=False)
+        neg_sample = self._train_frames[neg_label][index[0]]
 
         return pos_sample0, pos_sample1, neg_sample
 
@@ -73,7 +73,20 @@ class DataHelper(object):
         return corr
 
     def gen_training_batch(self, batch_size):
-        samples = self._gen_triples(batch_size)
+        pos_sample0s = []
+        pos_sample1s = []
+        neg_samples = []
+        for i in range(batch_size):
+            sample = self._gen_triples()
+            pos_sample0s.append(sample[0])
+            pos_sample1s.append(sample[1])
+            neg_samples.append(sample[2])
+
+        pos_sample0s = np.stack(pos_sample0s)
+        pos_sample1s = np.stack(pos_sample1s)
+        neg_samples = np.stack(neg_samples)
+        samples = (pos_sample0s, pos_sample1s, neg_samples)
+
         _, _, ts_dim = samples[0].shape
         training_batch = []
         for sample in samples:
@@ -98,7 +111,7 @@ class DataHelper(object):
         return test_frames, corrs, test_labels
 
 if __name__ == "__main__":
-    data = sio.loadmat("./datasets/pamap.mat")["data"]
+    data = sio.loadmat("./datasets/eeg.mat")["data"]
     dh = DataHelper(data, 10, 5)
     training_batch = dh.gen_training_batch(16)
     import pdb;pdb.set_trace()
